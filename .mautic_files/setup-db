@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Verifica se o número de argumentos está correto
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <arquivo_json> <caminho_output_php>"
+    exit 1
+fi
+
+# Verifica se o arquivo JSON existe
+if [ ! -f "$1" ]; then
+    echo "Arquivo JSON não encontrado: $1"
+    exit 1
+fi
+
+# Verifica se o arquivo de saída termina com .php
+if [[ "$2" != *.php ]]; then
+    echo "O arquivo de saída deve ter a extensão .php"
+    exit 1
+fi
+
+# Extrai os campos "nome_completo" e "email" do arquivo JSON
+db_host=$(jq -r '.db_host' "$1")
+db_name=$(jq -r '.db_name' "$1")
+db_user=$(jq -r '.db_user' "$1")
+db_password=$(jq -r '.db_password' "$1")
+
+output_file="$2"
+# Escreve o conteúdo PHP no arquivo
+echo "<?php" > "$output_file"
+echo "\$parameters = array(" >> "$output_file"
+echo "	'db_driver' => 'pdo_mysql'," >> "$output_file"
+echo "	'db_host' => '$db_host'," >> "$output_file"
+echo "	'db_table_prefix' => 'mautic_'," >> "$output_file"
+echo "	'db_port' => '3306'," >> "$output_file"
+echo "	'db_name' => '$db_name'," >> "$output_file"
+echo "	'db_user' => '$db_user'," >> "$output_file"
+echo "	'db_password' => '$db_password'," >> "$output_file"
+echo "	'db_backup_tables' => 0," >> "$output_file"
+echo "	'db_backup_prefix' => 'bak_'," >> "$output_file"
+echo ");" >> "$output_file"
+
+chown www-data:www-data "$output_file"
+chmod g+rw "$output_file"
+
+echo "Arquivo .php gerado com sucesso: \"$output_file\""

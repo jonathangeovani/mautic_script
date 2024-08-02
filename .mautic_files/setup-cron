@@ -1,0 +1,45 @@
+#!/bin/bash
+
+if [[ $# -ne 1 ]]; then
+	echo "Setup Cron Jobs for a ee site."
+	echo "Usage: $0 <site-url>"
+	exit 1
+fi
+
+RED='\033[0;31m'
+NC='\033[0m'
+
+site_url=$1
+available_sites=$(ee site list --format=json)
+
+if [[ $available_sites == *"\"$site_url\""* ]]; then
+	echo "Managing crontab ..."
+	crontab -l > ~/.mycron
+else
+	printf "${RED}Error:${NC} Site does not exists!\n"
+	exit 1
+fi
+
+sleep 1
+
+echo "1,6,11,16,21,26,31,36,41,46,51,56 * * * * ee shell $site_url --command=\"php bin/console mautic:segments:update\"" >> ~/.mycron
+echo "2,7,12,17,22,27,32,37,42,47,52,57 * * * * ee shell $site_url --command=\"php bin/console mautic:campaigns:update\"" >> ~/.mycron
+echo "3,8,13,18,23,28,33,38,43,48,53,58 * * * * ee shell $site_url --command=\"php bin/console mautic:campaigns:trigger\"" >> ~/.mycron
+echo "5,10,15,20,25,30,35,40,45,50,55,0 * * * * ee shell $site_url --command=\"php bin/console mautic:emails:send\"" >> ~/.mycron
+echo "*/5 * * * * ee shell $site_url --command=\"php bin/console mautic:broadcasts:send\"" >> ~/.mycron
+echo "0 2 16 * * ee shell $site_url --command=\"php bin/console mautic:iplookup:download\"" >> ~/.mycron
+echo "0 3 * * 0 ee shell $site_url --command=\"php bin/console mautic:donotsell:download\"" >> ~/.mycron
+echo "15 3 * * 0 ee shell $site_url --command=\"php bin/console mautic:max-mind:purge\"" >> ~/.mycron
+echo "* */1 * * * ee shell $site_url --command=\"php bin/console mautic:webhooks:process\"" >> ~/.mycron
+echo "*/30 * * * * ee shell $site_url --command=\"php bin/console mautic:social:monitoring\"" >> ~/.mycron
+echo "0 0 * * * ee shell $site_url --command=\"php bin/console mautic:import\"" >> ~/.mycron
+echo "0 4 * * * ee shell $site_url --command=\"php bin/console mautic:maintenance:cleanup --days-old=180\"" >> ~/.mycron
+
+echo "Adding 12 Cron Jobs to crontab ..."
+crontab ~/.mycron
+
+echo "Removing temp files ..."
+rm ~/.mycron
+
+sleep 1
+echo "Done."

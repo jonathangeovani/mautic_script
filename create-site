@@ -1,0 +1,115 @@
+#! /bin/bash
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+available_sites=$(ee site list --format=json)
+site_url=""
+
+clear
+while [[ $site_url == "" ]]
+do
+	echo "Enter a url to create the website: (site.example.com)"
+	read site_url
+
+	if [[ $site_url == "" ]]; then
+	        printf "${YELLOW}Cancelled!${NC} No site url received. Exiting...\n"
+	        sleep 1
+        	exit 1
+	elif [[ $available_sites == *"\"$site_url\""* ]]; then
+		printf "${RED}Error:${NC} $site_url already exists!\n"
+		site_url=""
+		continue
+	fi
+done
+
+echo "Enter your E-mail to issue a new SSL certificate: (leave it empty to skip SSL configuration)"
+read admin_email
+
+if [[ $admin_email == "" ]]; then
+        echo "Creating site without SSL Certificate ..."
+else
+        echo "Will issue a SSL certificate from Let's Encrypt using $admin_email."
+fi
+sleep 1
+
+echo "Starting the process ..."
+sleep 1
+
+echo "Set Timezone to Sao Paulo ..."
+sleep 1
+timedatectl set-timezone America/Sao_Paulo
+
+php_version="7.4"
+
+# Create a new websiet
+echo "Creating a new site ..."
+sleep 1
+
+if [[ $admin_email == "" ]];then
+	ee site create "$site_url" --mysql
+else
+	ee site create "$site_url" --mysql --ssl=le --le-mail="$admin_email"
+fi
+
+available_sites=$(ee site list --format=json)
+if [[ $available_sites != *"\"$site_url\""* ]]; then
+	printf "${RED}Error:${NC} Unable to create the website $site_url.\n"
+	exit 1
+fi
+
+echo "Updating PHP version ..."
+sleep 1
+ee site update "$site_url" --php=$php_version
+
+# Save the website info in a .json file
+echo "Copying site configurations ..."
+sleep 1
+ee site info "$site_url" --format=json >> ~/.mautic_files/.site-info.json
+
+# Install the Mautic v4.4
+echo "Installing Mautic 4.4.12 ..."
+sleep 1
+cd /opt/easyengine/sites/"$site_url"/app/htdocs/
+rm index.php
+unzip -q ~/.mautic_files/4.4.12.zip -d /opt/easyengine/sites/"$site_url"/app/htdocs/
+
+# Change directories permissions
+echo "Changing directories permissions to Mautic ..."
+sleep 1
+chown -R www-data:www-data /opt/easyengine/sites/"$site_url"/app/htdocs/
+chmod -R g+rw /opt/easyengine/sites/"$site_url"/app/htdocs/
+
+# Change default PHP memory_limit from 128M to 512M
+echo "Changing PHP memory limit to 512M ..."
+sleep 1
+cd /opt/easyengine/sites/"$site_url"/config/php/php/
+sed -i "s/memory_limit = 128M/memory_limit = 512M/" php.ini
+
+# Configure the first step of mautic installation
+echo "Configuring Mautic Database ..."
+sleep 1
+~/.mautic_files/setup-db ~/.mautic_files/.site-info.json /opt/easyengine/sites/"$site_url"/app/htdocs/app/config/local.php
+echo "Deleting temp files .."
+sleep 1
+rm ~/.mautic_files/.site-info.json
+
+# Change PHP Nginx configuration to a Mautic PHP Nginx Configuration
+echo "Configuring PHP locations for NGINX ..."
+sleep 1
+cd /opt/easyengine/sites/"$site_url"/config/nginx/conf.d/
+sed -i '/# PHP NGINX CONFIGURATION/,/# NGINX CONFIGURATION FOR COMMON LOCATION/ s/^/# /' main.conf
+sed -i '/location = \/robots.txt {/,/}/ s/^/# /' main.conf
+cp ~/.mautic_files/mautic_locations.conf /opt/easyengine/sites/"$site_url"/config/nginx/custom/user.conf
+
+# Configure Cron Jobs to Mautic
+echo "Setting Mautic Cron Jobs ..."
+~/.mautic_files/setup-cron $site_url
+
+# Restarts the website to apply all the changes
+echo "Restarting website to apply all changes ..."
+sleep 1
+ee site restart "$site_url"
+printf "${GREEN}Done!${NC} Website running at http://$site_url.\n"
